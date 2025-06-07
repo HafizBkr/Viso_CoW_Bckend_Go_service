@@ -58,4 +58,3 @@ Configure les variables d'environnement dans `.env` :
 
 Ce service est conçu pour fonctionner en complément du backend principal [Co-Working-B](https://github.com/HafizBkr/Co-Working-B).
 Il ne gère pas l'inscription, l'authentification utilisateur ou la gestion des espaces de travail, mais s'appuie sur les JWT émis par le backend principal.
-# Viso_CoW_Bckend_Go_service
