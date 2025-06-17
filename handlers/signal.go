@@ -44,7 +44,6 @@ func SignalHandler() gin.HandlerFunc {
 		roomsMu.Lock()
 		room, ok := rooms[roomID]
 		if !ok {
-			// Charge la room depuis MongoDB si elle existe
 			if mongoClient != nil {
 				var dbRoom models.Room
 				err := mongoClient.Database(os.Getenv("MONGO_DBNAME")).Collection("rooms").FindOne(context.Background(), bson.M{"roomId": roomID}).Decode(&dbRoom)
@@ -72,11 +71,9 @@ func SignalHandler() gin.HandlerFunc {
 		room.Participants[userID] = participant
 		roomsMu.Unlock()
 
-		// Notifie les autres
 		broadcast(roomID, WSMessage{Type: "join", Data: map[string]string{"user": username}})
 		sendParticipantList(room)
 
-		// Envoie l'historique des messages
 		if mongoClient != nil {
 			cur, err := mongoClient.Database(os.Getenv("MONGO_DBNAME")).Collection("messages").
 				Find(context.Background(), bson.M{"roomId": roomID})
