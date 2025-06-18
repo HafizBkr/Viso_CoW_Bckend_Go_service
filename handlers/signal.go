@@ -98,7 +98,7 @@ func SignalHandler() gin.HandlerFunc {
 			handleWSMessage(roomID, userID, msg)
 		}
 
-		// Déconnexion
+		
 		roomsMu.Lock()
 		delete(room.Participants, userID)
 		roomsMu.Unlock()
@@ -146,7 +146,6 @@ func handleWSMessage(roomID, senderID string, msg WSMessage) {
 	case "offer", "answer", "candidate":
 		broadcast(roomID, msg)
 	case "chat":
-		// Persiste le message dans MongoDB
 		if mongoClient != nil {
 			m := models.Message{
 				RoomID:    roomID,
