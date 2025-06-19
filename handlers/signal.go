@@ -97,7 +97,6 @@ func SignalHandler() gin.HandlerFunc {
 			}
 			handleWSMessage(roomID, userID, msg)
 		}
-
 		roomsMu.Lock()
 		delete(room.Participants, userID)
 		roomsMu.Unlock()
