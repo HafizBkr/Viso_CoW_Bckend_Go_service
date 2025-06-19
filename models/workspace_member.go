@@ -7,7 +7,7 @@ type WorkspaceMember struct {
 	Workspace       primitive.ObjectID `bson:"workspace" json:"workspace"`
 	User            primitive.ObjectID `bson:"user,omitempty" json:"user,omitempty"`
 	Email           string             `bson:"email" json:"email"`
-	Role            string             `bson:"role" json:"role"` // owner, admin, member, guest
+	Role            string             `bson:"role" json:"role"`
 	InvitedBy       primitive.ObjectID `bson:"invitedBy" json:"invitedBy"`
 	InviteAccepted  bool               `bson:"inviteAccepted" json:"inviteAccepted"`
 	CurrentPosition *Position          `bson:"currentPosition,omitempty" json:"currentPosition,omitempty"`

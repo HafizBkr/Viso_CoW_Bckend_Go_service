@@ -6,7 +6,7 @@ type Participant struct {
 	Conn          *websocket.Conn
 	UserID        string
 	Username      string
-	Role          string // "admin" ou "participant"
+	Role          string
 	AudioMuted    bool
 	VideoOff      bool
 	ScreenSharing bool

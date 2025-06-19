@@ -18,7 +18,6 @@ func main() {
 	if err != nil {
 		log.Println("Aucun fichier .env trouvé ou erreur de chargement, on continue avec l'environnement système")
 	}
-
 	mongoURI := os.Getenv("MONGO_URI")
 	if mongoURI == "" {
 		log.Fatal("MONGO_URI n'est pas défini dans l'environnement")
@@ -28,7 +27,6 @@ func main() {
 		log.Fatalf("Erreur de connexion à MongoDB: %v", err)
 	}
 	handlers.SetMongoClient(mongoClient)
-
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})

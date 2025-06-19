@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"go-visio-service/middleware"
 	"go-visio-service/models"
 	"go-visio-service/utils"
 	"net/http"
@@ -40,8 +41,7 @@ func CreateRoomHandler() gin.HandlerFunc {
 		}
 		workspaceID := c.PostForm("workspaceId")
 
-		// Vérification d'accès au workspace (middleware logique)
-		hasAccess, err := HasWorkspaceAccess(mongoClient, userID, workspaceID)
+		hasAccess, err := middleware.HasWorkspaceAccess(mongoClient, userID, workspaceID)
 		if err != nil {
 			c.JSON(400, gin.H{"error": "Invalid workspace or user ID"})
 			return

@@ -13,7 +13,7 @@ func Load() *Config {
 	return &Config{
 		MongoURI:  os.Getenv("MONGO_URI"),
 		JwtSecret: os.Getenv("JWT_SECRET"),
-		DbName:    os.Getenv("MONGO_DBNAME"), // Mets le nom de ta DB ici
+		DbName:    os.Getenv("MONGO_DBNAME"),
 		Port:      getEnv("PORT", "8081"),
 	}
 }

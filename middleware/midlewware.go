@@ -10,7 +10,6 @@ import (
 )
 
 func HasWorkspaceAccess(mongoClient *mongo.Client, userID, workspaceID string) (bool, error) {
-	// Vérifie que workspaceID et userID sont des ObjectId valides
 	workspaceObjID, err := primitive.ObjectIDFromHex(workspaceID)
 	if err != nil {
 		return false, err
@@ -19,15 +18,11 @@ func HasWorkspaceAccess(mongoClient *mongo.Client, userID, workspaceID string) (
 	if err != nil {
 		return false, err
 	}
-
-	// Vérifie que le workspace existe
 	workspaceFilter := bson.M{"_id": workspaceObjID}
 	count, err := mongoClient.Database(os.Getenv("MONGO_DBNAME")).Collection("workspaces").CountDocuments(context.Background(), workspaceFilter)
 	if err != nil || count == 0 {
-		return false, nil // workspace not found
+		return false, nil
 	}
-
-	// Vérifie que le user est membre du workspace et que inviteAccepted = true
 	memberFilter := bson.M{
 		"workspace":      workspaceObjID,
 		"user":           userObjID,
@@ -35,7 +30,7 @@ func HasWorkspaceAccess(mongoClient *mongo.Client, userID, workspaceID string) (
 	}
 	count, err = mongoClient.Database(os.Getenv("MONGO_DBNAME")).Collection("workspacemembers").CountDocuments(context.Background(), memberFilter)
 	if err != nil || count == 0 {
-		return false, nil // not a member or not accepted
+		return false, nil
 	}
 
 	return true, nil

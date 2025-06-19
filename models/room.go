@@ -6,9 +6,9 @@ import (
 
 type Room struct {
 	ID           primitive.ObjectID      `bson:"_id,omitempty" json:"id"`
-	RoomID       string                  `bson:"roomId" json:"roomId"` // UUID
+	RoomID       string                  `bson:"roomId" json:"roomId"`
 	WorkspaceID  string                  `bson:"workspaceId" json:"workspaceId"`
 	AdminID      string                  `bson:"adminId" json:"adminId"`
 	CreatedAt    primitive.DateTime      `bson:"createdAt" json:"createdAt"`
-	Participants map[string]*Participant `bson:"-" json:"participants,omitempty"` // Pas stocké en DB
+	Participants map[string]*Participant `bson:"-" json:"participants,omitempty"`
 }
