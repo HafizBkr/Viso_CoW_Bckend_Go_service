@@ -34,12 +34,27 @@ func CreateRoomHandler() gin.HandlerFunc {
 			c.JSON(401, gin.H{"error": "Missing or invalid Authorization header"})
 			return
 		}
+
 		userID, _, _ := utils.ParseUserFromJWT(token)
 		if userID == "" {
 			c.JSON(401, gin.H{"error": "Invalid or expired JWT"})
 			return
 		}
-		workspaceID := c.PostForm("workspaceId")
+
+		// ✅ Lecture du JSON
+		type CreateRoomPayload struct {
+			WorkspaceID string `json:"workspaceId"`
+		}
+		var payload CreateRoomPayload
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+			return
+		}
+		workspaceID := payload.WorkspaceID
+		if workspaceID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing workspaceId"})
+			return
+		}
 
 		hasAccess, err := middleware.HasWorkspaceAccess(mongoClient, userID, workspaceID)
 		if err != nil {
@@ -59,6 +74,7 @@ func CreateRoomHandler() gin.HandlerFunc {
 			CreatedAt:    primitive.NewDateTimeFromTime(time.Now()),
 			Participants: make(map[string]*models.Participant),
 		}
+
 		roomsMu.Lock()
 		rooms[roomID] = room
 		roomsMu.Unlock()
@@ -70,6 +86,7 @@ func CreateRoomHandler() gin.HandlerFunc {
 				return
 			}
 		}
+
 		c.JSON(http.StatusOK, gin.H{"roomId": roomID})
 	}
 }
