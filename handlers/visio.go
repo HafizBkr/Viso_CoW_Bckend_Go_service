@@ -40,8 +40,6 @@ func CreateRoomHandler() gin.HandlerFunc {
 			c.JSON(401, gin.H{"error": "Invalid or expired JWT"})
 			return
 		}
-
-		// ✅ Lecture du JSON
 		type CreateRoomPayload struct {
 			WorkspaceID string `json:"workspaceId"`
 		}

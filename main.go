@@ -9,8 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+
+	// "go.mongodb.org/mongo-driver/bson"
+	// "go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -44,30 +45,30 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// ✅ Route de test d'accès (à utiliser pour vérifier le middleware)
-	r.GET("/debug/workspaces/:userId", func(c *gin.Context) {
-		userId := c.Param("userId")
-		db := mongoClient.Database(os.Getenv("MONGO_DBNAME"))
-		ctx := context.Background()
+	// //  Route de test d'accès (à utiliser pour vérifier le middleware)
+	// r.GET("/debug/workspaces/:userId", func(c *gin.Context) {
+	// 	userId := c.Param("userId")
+	// 	db := mongoClient.Database(os.Getenv("MONGO_DBNAME"))
+	// 	ctx := context.Background()
 
-		objUserId, err := primitive.ObjectIDFromHex(userId)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid userId"})
-			return
-		}
+	// 	objUserId, err := primitive.ObjectIDFromHex(userId)
+	// 	if err != nil {
+	// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid userId"})
+	// 		return
+	// 	}
 
-		cursor, err := db.Collection("workspaces").Find(ctx, bson.M{"createdBy": objUserId})
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch workspaces"})
-			return
-		}
-		var workspaces []bson.M
-		if err = cursor.All(ctx, &workspaces); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse workspaces"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"workspaces": workspaces})
-	})
+	// 	cursor, err := db.Collection("workspaces").Find(ctx, bson.M{"createdBy": objUserId})
+	// 	if err != nil {
+	// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch workspaces"})
+	// 		return
+	// 	}
+	// 	var workspaces []bson.M
+	// 	if err = cursor.All(ctx, &workspaces); err != nil {
+	// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse workspaces"})
+	// 		return
+	// 	}
+	// 	c.JSON(http.StatusOK, gin.H{"workspaces": workspaces})
+	// })
 
 	// Routes de visio
 	r.POST("/api/visio/room", handlers.CreateRoomHandler())
