@@ -1,4 +1,4 @@
-# Coworking Visio Conference Service (Go)
+# Coworking Visio Conference Service (Go).
 
 Ce dépôt contient le service de visioconférence du backend principal [Co-Working-B](https://github.com/HafizBkr/Co-Working-B).
 Il permet la gestion des salles de réunion vidéo, l'échange de messages en temps réel et la gestion des participants dans un espace de coworking virtuel.
