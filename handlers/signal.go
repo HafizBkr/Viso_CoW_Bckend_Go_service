@@ -58,18 +58,17 @@ func SignalHandler() gin.HandlerFunc {
 					ws.WriteJSON(WSMessage{Type: "error", Data: "Room not found"})
 					return
 				}
-
-				// Vérification d'accès au workspace lié à la room
-				if room != nil && mongoClient != nil {
-					workspaceID := room.WorkspaceID
-					hasAccess, err := middleware.HasWorkspaceAccess(mongoClient, userID, workspaceID)
-					if err != nil || !hasAccess {
-						roomsMu.Unlock()
-						ws.WriteJSON(WSMessage{Type: "error", Data: "Access denied to workspace"})
-						ws.Close()
-						return
-					}
-				}
+			}
+		}
+		// Vérification d'accès au workspace lié à la room (toujours, que la room vienne de la RAM ou MongoDB)
+		if room != nil && mongoClient != nil {
+			workspaceID := room.WorkspaceID
+			hasAccess, err := middleware.HasWorkspaceAccess(mongoClient, userID, workspaceID)
+			if err != nil || !hasAccess {
+				roomsMu.Unlock()
+				ws.WriteJSON(WSMessage{Type: "error", Data: "Access denied to workspace"})
+				ws.Close()
+				return
 			}
 		}
 		role := "participant"
