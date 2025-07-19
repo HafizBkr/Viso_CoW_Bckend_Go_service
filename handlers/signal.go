@@ -26,12 +26,21 @@ type WSMessage struct {
 	Data interface{} `json:"data"`
 }
 
+// SignalHandler gère la connexion WebSocket pour la visio.
+// Authentification :
+// - Priorité à la query string (?token=...) pour compatibilité navigateur
+// - Sinon, fallback sur le header Authorization (utile pour wscat ou tests API)
 func SignalHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roomID := c.Param("id")
-		token := c.GetHeader("Authorization")
-		if len(token) > 7 && token[:7] == "Bearer " {
-			token = token[7:]
+
+		// 1. Extraction du token JWT (query string ou header)
+		token := c.Query("token")
+		if token == "" {
+			token = c.GetHeader("Authorization")
+			if len(token) > 7 && token[:7] == "Bearer " {
+				token = token[7:]
+			}
 		}
 		userID, username, _ := utils.ParseUserFromJWT(token)
 		log.Printf("Parsed JWT: userID=%s, username=%s", userID, username)
@@ -43,6 +52,7 @@ func SignalHandler() gin.HandlerFunc {
 		}
 		defer ws.Close()
 
+		// 2. Recherche de la room (RAM ou MongoDB)
 		roomsMu.Lock()
 		room, ok := rooms[roomID]
 		if !ok {
@@ -60,7 +70,7 @@ func SignalHandler() gin.HandlerFunc {
 				}
 			}
 		}
-		// Vérification d'accès au workspace lié à la room (toujours, que la room vienne de la RAM ou MongoDB)
+		// 3. Vérification d'accès au workspace lié à la room (toujours, RAM ou MongoDB)
 		if room != nil && mongoClient != nil {
 			workspaceID := room.WorkspaceID
 			hasAccess, err := middleware.HasWorkspaceAccess(mongoClient, userID, workspaceID)
@@ -87,6 +97,7 @@ func SignalHandler() gin.HandlerFunc {
 		broadcast(roomID, WSMessage{Type: "join", Data: map[string]string{"user": username}})
 		sendParticipantList(room)
 
+		// 4. Envoi de l'historique des messages à l'arrivée
 		if mongoClient != nil {
 			cur, err := mongoClient.Database(os.Getenv("MONGO_DBNAME")).Collection("messages").
 				Find(context.Background(), bson.M{"roomId": roomID})
@@ -103,6 +114,7 @@ func SignalHandler() gin.HandlerFunc {
 			}
 		}
 
+		// 5. Boucle principale de gestion des messages WebSocket
 		for {
 			var msg WSMessage
 			if err := ws.ReadJSON(&msg); err != nil {

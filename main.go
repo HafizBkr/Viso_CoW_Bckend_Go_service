@@ -83,6 +83,7 @@ func main() {
 	// Routes de visio
 	r.POST("/api/visio/room", handlers.CreateRoomHandler())
 	r.GET("/ws/room/:id", handlers.SignalHandler())
+	r.GET("/workspaces/:workspaceId/rooms", handlers.ListRoomsByWorkspaceHandler())
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
