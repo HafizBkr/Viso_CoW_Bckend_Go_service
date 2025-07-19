@@ -9,6 +9,8 @@ import (
 	"os"
 	"time"
 
+	"go-visio-service/middleware"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"go.mongodb.org/mongo-driver/bson"
@@ -55,6 +57,18 @@ func SignalHandler() gin.HandlerFunc {
 					roomsMu.Unlock()
 					ws.WriteJSON(WSMessage{Type: "error", Data: "Room not found"})
 					return
+				}
+
+				// Vérification d'accès au workspace lié à la room
+				if room != nil && mongoClient != nil {
+					workspaceID := room.WorkspaceID
+					hasAccess, err := middleware.HasWorkspaceAccess(mongoClient, userID, workspaceID)
+					if err != nil || !hasAccess {
+						roomsMu.Unlock()
+						ws.WriteJSON(WSMessage{Type: "error", Data: "Access denied to workspace"})
+						ws.Close()
+						return
+					}
 				}
 			}
 		}

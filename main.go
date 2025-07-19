@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"go-visio-service/handlers"
 	"log"
 	"net/http"
@@ -82,6 +83,12 @@ func main() {
 	// Routes de visio
 	r.POST("/api/visio/room", handlers.CreateRoomHandler())
 	r.GET("/ws/room/:id", handlers.SignalHandler())
+
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET n'est pas défini dans l'environnement")
+	}
+	fmt.Printf("JWT_SECRET from env: [%s]\n", jwtSecret)
 
 	// Lancer le serveur
 	err = r.Run(":8081")
