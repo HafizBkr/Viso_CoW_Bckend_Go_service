@@ -52,8 +52,7 @@
             document.getElementById("join").onclick = async () => {
                 const room = document.getElementById("room").value;
                 const token = document.getElementById("token").value;
-                // --- MODIFICATION ICI ---
-                const wsUrl = `wss://visoconf-service-go.onrender.com/ws/room/${room}?token=${token}`;
+                const wsUrl = `ws://${location.hostname}:8081/ws/room/${room}?token=${token}`;
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => log("WebSocket connected");

@@ -7,24 +7,15 @@ import (
 	"go-visio-service/utils"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // Déclarations globales utilisées dans tout le package handlers
-var roomsMu sync.Mutex
-var rooms = make(map[string]*models.Room)
-var mongoClient *mongo.Client
-
-func SetMongoClient(client *mongo.Client) {
-	mongoClient = client
-}
 
 func CreateRoomHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
