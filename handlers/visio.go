@@ -17,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// Déclarations globales utilisées dans tout le package handlers
 var roomsMu sync.Mutex
 var rooms = make(map[string]*models.Room)
 var mongoClient *mongo.Client
@@ -88,7 +89,6 @@ func CreateRoomHandler() gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{"roomId": roomID})
 	}
-
 }
 
 func ListRoomsByWorkspaceHandler() gin.HandlerFunc {
@@ -110,7 +110,7 @@ func ListRoomsByWorkspaceHandler() gin.HandlerFunc {
 			return
 		}
 
-		var rooms []models.Room
+		var roomsList []models.Room
 		cursor, err := mongoClient.Database(os.Getenv("MONGO_DBNAME")).Collection("rooms").Find(
 			context.Background(),
 			bson.M{"workspaceId": workspaceID},
@@ -119,14 +119,14 @@ func ListRoomsByWorkspaceHandler() gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "Failed to fetch rooms"})
 			return
 		}
-		if err := cursor.All(context.Background(), &rooms); err != nil {
+		if err := cursor.All(context.Background(), &roomsList); err != nil {
 			c.JSON(500, gin.H{"error": "Failed to decode rooms"})
 			return
 		}
 
 		// Optionnel : ne retourne que les champs utiles
 		var result []gin.H
-		for _, r := range rooms {
+		for _, r := range roomsList {
 			result = append(result, gin.H{
 				"roomId":    r.RoomID,
 				"adminId":   r.AdminID,

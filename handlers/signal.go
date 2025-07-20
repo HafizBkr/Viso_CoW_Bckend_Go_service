@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"go-visio-service/middleware"
@@ -18,19 +17,15 @@ import (
 	"github.com/gorilla/websocket"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var (
-	upgrader = websocket.Upgrader{
-		CheckOrigin:     func(r *http.Request) bool { return true },
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-	}
-	roomsMu     sync.RWMutex
-	rooms       = make(map[string]*models.Room)
-	mongoClient *mongo.Client
-)
+// Les variables roomsMu, rooms, mongoClient sont déclarées dans visio.go
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin:     func(r *http.Request) bool { return true },
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
 
 type WSMessage struct {
 	Type   string      `json:"type"`
@@ -39,19 +34,15 @@ type WSMessage struct {
 	Target string      `json:"target,omitempty"`
 }
 
-func SetMongoClient(client *mongo.Client) {
-	mongoClient = client
-}
-
 func SignalHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roomID := c.Param("id")
 		log.Printf("[SignalHandler] Tentative de connexion à la room: %s", roomID)
 
-		// Extraction du token JWT
+		// Extraction du token JWT (version compatible avec l'utils existant)
 		token := extractToken(c)
-		userID, username, err := utils.ParseUserFromJWT(token)
-		if err != nil || userID == "" {
+		userID, username, _ := utils.ParseUserFromJWT(token)
+		if userID == "" { // On vérifie seulement que userID n'est pas vide
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			return
 		}
@@ -62,7 +53,10 @@ func SignalHandler() gin.HandlerFunc {
 			log.Println("WebSocket upgrade error:", err)
 			return
 		}
-		defer ws.Close()
+		defer func() {
+			ws.Close()
+			log.Printf("[WS] Connection closed for user %s (%s)", userID, username)
+		}()
 
 		// Configurer les timeouts
 		ws.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -74,28 +68,90 @@ func SignalHandler() gin.HandlerFunc {
 		// Gestion de la room
 		room, err := getOrCreateRoom(roomID)
 		if err != nil {
-			ws.WriteJSON(WSMessage{Type: "error", Data: err.Error()})
+			_ = ws.WriteJSON(WSMessage{Type: "error", Data: err.Error()})
 			return
 		}
 
 		// Vérification des permissions
 		if err := checkWorkspaceAccess(room, userID); err != nil {
-			ws.WriteJSON(WSMessage{Type: "error", Data: err.Error()})
+			_ = ws.WriteJSON(WSMessage{Type: "error", Data: err.Error()})
 			return
 		}
 
 		// Création du participant
-		participant := createParticipant(ws, userID, username, room.AdminID)
+		participant := &models.Participant{
+			Conn:          ws,
+			UserID:        userID,
+			Username:      username,
+			Role:          "participant",
+			AudioMuted:    false,
+			VideoOff:      false,
+			ScreenSharing: false,
+		}
+
+		if userID == room.AdminID {
+			participant.Role = "admin"
+		}
 
 		// Ajout du participant à la room
-		addParticipantToRoom(room, userID, participant)
-		defer removeParticipantFromRoom(room, userID, username)
+		roomsMu.Lock()
+		room.Participants[userID] = participant
+		roomsMu.Unlock()
+
+		log.Printf("[JOIN] User %s (%s) joined room %s", userID, username, room.RoomID)
+
+		// Notifier les autres participants
+		broadcast(room.RoomID, WSMessage{
+			Type: "peer_joined",
+			From: userID,
+			Data: map[string]string{
+				"userID":   userID,
+				"username": username,
+				"role":     participant.Role,
+			},
+		})
+
+		// Envoyer la liste des participants mise à jour
+		sendParticipantList(room)
 
 		// Envoi des informations initiales
 		sendInitialInfo(ws, room, userID, username)
 
 		// Boucle de lecture des messages
-		handleMessages(ws, roomID, userID, username)
+		for {
+			var msg WSMessage
+			if err := ws.ReadJSON(&msg); err != nil {
+				log.Printf("[WS] Read error from %s (%s): %v", userID, username, err)
+				break
+			}
+
+			msg.From = userID
+			if err := handleWSMessage(roomID, userID, msg); err != nil {
+				log.Printf("[WS] Error handling message from %s (%s): %v", userID, username, err)
+				break
+			}
+		}
+
+		// Nettoyage après déconnexion
+		roomsMu.Lock()
+		delete(room.Participants, userID)
+		if len(room.Participants) == 0 {
+			delete(rooms, room.RoomID)
+		}
+		roomsMu.Unlock()
+
+		log.Printf("[LEAVE] User %s (%s) left room %s", userID, username, room.RoomID)
+
+		broadcast(room.RoomID, WSMessage{
+			Type: "peer_left",
+			From: userID,
+			Data: map[string]string{
+				"userID":   userID,
+				"username": username,
+			},
+		})
+
+		sendParticipantList(room)
 	}
 }
 
@@ -121,14 +177,14 @@ func getOrCreateRoom(roomID string) (*models.Room, error) {
 	}
 
 	if mongoClient == nil {
-		return nil, errors.New("database connection not available")
+		return nil, fmt.Errorf("database connection not available")
 	}
 
 	var dbRoom models.Room
 	err := mongoClient.Database(os.Getenv("MONGO_DBNAME")).Collection("rooms").
 		FindOne(context.Background(), bson.M{"roomId": roomID}).Decode(&dbRoom)
 	if err != nil {
-		return nil, fmt.Errorf("room not found")
+		return nil, fmt.Errorf("room not found: %w", err)
 	}
 
 	dbRoom.Participants = make(map[string]*models.Participant)
@@ -203,7 +259,7 @@ func removeParticipantFromRoom(room *models.Room, userID, username string) {
 
 func sendInitialInfo(ws *websocket.Conn, room *models.Room, userID, username string) {
 	// Envoyer les pairs existants
-	roomsMu.RLock()
+	roomsMu.Lock()
 	var existingPeers []map[string]string
 	for id, p := range room.Participants {
 		if id != userID {
@@ -213,10 +269,10 @@ func sendInitialInfo(ws *websocket.Conn, room *models.Room, userID, username str
 			})
 		}
 	}
-	roomsMu.RUnlock()
+	roomsMu.Unlock()
 
 	if len(existingPeers) > 0 {
-		ws.WriteJSON(WSMessage{
+		_ = ws.WriteJSON(WSMessage{
 			Type: "existing_peers",
 			Data: existingPeers,
 		})
@@ -238,7 +294,7 @@ func sendMessageHistory(ws *websocket.Conn, roomID string) {
 	var messages []models.Message
 	if err := cur.All(context.Background(), &messages); err == nil {
 		for _, m := range messages {
-			ws.WriteJSON(WSMessage{
+			_ = ws.WriteJSON(WSMessage{
 				Type: "chat",
 				Data: map[string]interface{}{
 					"user":    m.Username,
@@ -267,10 +323,10 @@ func handleMessages(ws *websocket.Conn, roomID, userID, username string) {
 }
 
 func handleWSMessage(roomID, senderID string, msg WSMessage) error {
-	roomsMu.RLock()
+	roomsMu.Lock()
 	room, exists := rooms[roomID]
 	sender, senderExists := room.Participants[senderID]
-	roomsMu.RUnlock()
+	roomsMu.Unlock()
 
 	if !exists || !senderExists {
 		return fmt.Errorf("room or participant not found")
@@ -469,8 +525,8 @@ func sendToParticipant(roomID, targetID string, msg WSMessage) {
 }
 
 func sendParticipantList(room *models.Room) {
-	roomsMu.RLock()
-	defer roomsMu.RUnlock()
+	roomsMu.Lock()
+	defer roomsMu.Unlock()
 
 	var participants []map[string]interface{}
 	for _, p := range room.Participants {
