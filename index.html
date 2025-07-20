@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="fr">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Test Visioconférence WebRTC</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            video {
+                background: #374151;
+            }
+            .video-container {
+                position: relative;
+                min-height: 200px;
+            }
+        </style>
+    </head>
+    <body class="bg-gray-900 text-white min-h-screen">
+        <div id="app" class="flex flex-col h-screen">
+            <!-- Header -->
+            <header class="bg-gray-800 p-4 flex justify-between items-center">
+                <h1 class="text-xl font-bold">Test Visioconférence WebRTC</h1>
+                <div id="status" class="text-red-400">● Déconnecté</div>
+            </header>
+
+            <!-- Zone de connexion -->
+            <div
+                id="connectionForm"
+                class="flex-1 flex items-center justify-center"
+            >
+                <div class="bg-gray-800 p-8 rounded-lg max-w-md w-full mx-4">
+                    <h2 class="text-2xl mb-6 text-center">
+                        Rejoindre une room
+                    </h2>
+                    <div class="space-y-4">
+                        <input
+                            type="text"
+                            id="roomIdInput"
+                            placeholder="ID de la room (ex: test-room-123)"
+                            class="w-full p-3 bg-gray-700 rounded border-none outline-none text-white"
+                        />
+                        <input
+                            type="text"
+                            id="usernameInput"
+                            placeholder="Votre nom"
+                            class="w-full p-3 bg-gray-700 rounded border-none outline-none text-white"
+                        />
+                        <button
+                            id="joinBtn"
+                            class="w-full p-3 bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                        >
+                            Rejoindre
+                        </button>
+                    </div>
+
+                    <!-- Test caméra/micro -->
+                    <div class="mt-6 pt-6 border-t border-gray-600">
+                        <h3 class="text-lg mb-4">Test de votre équipement</h3>
+                        <div
+                            class="video-container rounded-lg overflow-hidden bg-gray-700 mb-4"
+                        >
+                            <video
+                                id="testVideo"
+                                autoplay
+                                muted
+                                playsinline
+                                class="w-full h-48 object-cover"
+                            ></video>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button
+                                id="testCameraBtn"
+                                class="flex-1 p-2 bg-green-600 hover:bg-green-700 rounded"
+                            >
+                                🎥 Tester Caméra
+                            </button>
+                            <button
+                                id="stopTestBtn"
+                                class="flex-1 p-2 bg-red-600 hover:bg-red-700 rounded"
+                            >
+                                ⏹️ Arrêter
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Zone vidéo (cachée initialement) -->
+            <div id="videoCall" class="flex-1 flex flex-col hidden">
+                <!-- Grille vidéo -->
+                <div class="flex-1 p-4">
+                    <div
+                        id="videoGrid"
+                        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 h-full"
+                    >
+                        <!-- Vidéo locale -->
+                        <div
+                            class="video-container bg-gray-800 rounded-lg overflow-hidden relative"
+                        >
+                            <video
+                                id="localVideo"
+                                autoplay
+                                muted
+                                playsinline
+                                class="w-full h-full object-cover"
+                            ></video>
+                            <div
+                                class="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded text-sm"
+                            >
+                                <span id="localUsername">Vous</span>
+                            </div>
+                            <div
+                                id="localVideoOff"
+                                class="absolute inset-0 bg-gray-700 flex items-center justify-center hidden"
+                            >
+                                <div class="text-6xl">📹❌</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contrôles -->
+                <div class="bg-gray-800 p-4 flex justify-center space-x-4">
+                    <button
+                        id="toggleAudio"
+                        class="p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors"
+                    >
+                        🎤
+                    </button>
+                    <button
+                        id="toggleVideo"
+                        class="p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors"
+                    >
+                        🎥
+                    </button>
+                    <button
+                        id="shareScreen"
+                        class="p-3 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors"
+                    >
+                        🖥️
+                    </button>
+                    <button
+                        id="leaveCall"
+                        class="p-3 bg-red-600 hover:bg-red-700 rounded-full transition-colors"
+                    >
+                        📞❌
+                    </button>
+                </div>
+            </div>
+
+            <!-- Chat -->
+            <div
+                id="chatPanel"
+                class="fixed right-0 top-0 h-full w-80 bg-gray-800 transform translate-x-full transition-transform hidden"
+            >
+                <div class="p-4 border-b border-gray-700">
+                    <h3 class="font-bold">💬 Chat</h3>
+                    <button
+                        id="closeChatBtn"
+                        class="absolute top-4 right-4 text-gray-400 hover:text-white"
+                    >
+                        ✕
+                    </button>
+                </div>
+                <div
+                    id="chatMessages"
+                    class="flex-1 overflow-y-auto p-4 space-y-2 h-96"
+                ></div>
+                <div class="p-4 border-t border-gray-700">
+                    <div class="flex space-x-2">
+                        <input
+                            type="text"
+                            id="messageInput"
+                            placeholder="Tapez votre message..."
+                            class="flex-1 p-2 bg-gray-700 rounded outline-none text-white"
+                        />
+                        <button
+                            id="sendMessageBtn"
+                            class="p-2 bg-blue-600 hover:bg-blue-700 rounded"
+                        >
+                            ➤
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bouton chat flottant -->
+            <button
+                id="openChatBtn"
+                class="fixed bottom-20 right-4 p-4 bg-blue-600 hover:bg-blue-700 rounded-full shadow-lg hidden"
+            >
+                💬
+            </button>
+        </div>
+
+        <script>
+            // Variables globales
+            let localStream = null;
+            let websocket = null;
+            let isVideoOn = true;
+            let isAudioOn = true;
+            let isScreenSharing = false;
+            let currentUser = { name: "", id: "" };
+            let roomId = "";
+            let peerConnections = {};
+            let remoteStreams = {};
+
+            // Configuration WebRTC
+            const iceServers = {
+                iceServers: [
+                    { urls: "stun:stun.l.google.com:19302" },
+                    { urls: "stun:stun1.l.google.com:19302" },
+                ],
+            };
+
+            // Éléments DOM
+            const elements = {
+                connectionForm: document.getElementById("connectionForm"),
+                videoCall: document.getElementById("videoCall"),
+                roomIdInput: document.getElementById("roomIdInput"),
+                usernameInput: document.getElementById("usernameInput"),
+                joinBtn: document.getElementById("joinBtn"),
+                testVideo: document.getElementById("testVideo"),
+                testCameraBtn: document.getElementById("testCameraBtn"),
+                stopTestBtn: document.getElementById("stopTestBtn"),
+                localVideo: document.getElementById("localVideo"),
+                status: document.getElementById("status"),
+                localUsername: document.getElementById("localUsername"),
+                toggleAudio: document.getElementById("toggleAudio"),
+                toggleVideo: document.getElementById("toggleVideo"),
+                shareScreen: document.getElementById("shareScreen"),
+                leaveCall: document.getElementById("leaveCall"),
+                videoGrid: document.getElementById("videoGrid"),
+                localVideoOff: document.getElementById("localVideoOff"),
+            };
+
+            // Test de la caméra
+            elements.testCameraBtn.addEventListener("click", async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: true,
+                    });
+                    elements.testVideo.srcObject = stream;
+                    console.log("✅ Caméra et microphone OK");
+                } catch (error) {
+                    console.error("❌ Erreur caméra/micro:", error);
+                    alert("Erreur: " + error.message);
+                }
+            });
+
+            elements.stopTestBtn.addEventListener("click", () => {
+                if (elements.testVideo.srcObject) {
+                    elements.testVideo.srcObject
+                        .getTracks()
+                        .forEach((track) => track.stop());
+                    elements.testVideo.srcObject = null;
+                }
+            });
+
+            // Rejoindre la room
+            elements.joinBtn.addEventListener("click", async () => {
+                const roomIdValue = elements.roomIdInput.value.trim();
+                const username = elements.usernameInput.value.trim();
+
+                if (!roomIdValue || !username) {
+                    alert("Veuillez remplir tous les champs");
+                    return;
+                }
+
+                roomId = roomIdValue;
+                currentUser.name = username;
+                currentUser.id =
+                    "user_" + Math.random().toString(36).substr(2, 9);
+
+                await connectToRoom();
+            });
+
+            // Connexion WebSocket
+            async function connectToRoom() {
+                try {
+                    // Initialiser le stream local
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: true,
+                    });
+                    elements.localVideo.srcObject = localStream;
+                    elements.localUsername.textContent =
+                        currentUser.name + " (Vous)";
+
+                    // Connexion WebSocket (REMPLACEZ par votre vraie URL et token)
+                    const wsUrl = `ws://localhost:8081/ws/room/${roomId}?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODc2MjgwZDcwMTM1M2Q3OWFlYzM0ZGEiLCJlbWFpbCI6ImhhZml6aW5vdnVzQGdtYWlsLmNvbSIsInVzZXJuYW1lIjoidGVzdHVzZXIiLCJpYXQiOjE3NTI5NzY4MzUsImV4cCI6MTc1MzE0OTYzNX0.KgMNN70bN49i9q3xp-BUCXdNdQpnb4JhWCJlCyO1Tvc`;
+                    websocket = new WebSocket(wsUrl);
+
+                    websocket.onopen = () => {
+                        console.log("✅ Connecté à la room:", roomId);
+                        elements.status.innerHTML =
+                            "● Connecté - Room: " + roomId;
+                        elements.status.className = "text-green-400";
+
+                        // Basculer vers l'interface de visio
+                        elements.connectionForm.classList.add("hidden");
+                        elements.videoCall.classList.remove("hidden");
+                        document
+                            .getElementById("openChatBtn")
+                            .classList.remove("hidden");
+                    };
+
+                    websocket.onmessage = (event) => {
+                        const message = JSON.parse(event.data);
+                        handleWebSocketMessage(message);
+                    };
+
+                    websocket.onclose = () => {
+                        console.log("❌ Connexion fermée");
+                        elements.status.innerHTML = "● Déconnecté";
+                        elements.status.className = "text-red-400";
+                        cleanup();
+                    };
+
+                    websocket.onerror = (error) => {
+                        console.error("❌ Erreur WebSocket:", error);
+                        alert(
+                            "Erreur de connexion. Vérifiez que votre serveur Go est lancé sur le port 8081",
+                        );
+                    };
+                } catch (error) {
+                    console.error("❌ Erreur de connexion:", error);
+                    alert("Erreur: " + error.message);
+                }
+            }
+
+            // Gérer les messages WebSocket
+            function handleWebSocketMessage(message) {
+                console.log("📨 Message reçu:", message);
+
+                switch (message.type) {
+                    case "participants":
+                        updateParticipantsList(message.data);
+                        break;
+
+                    case "join":
+                        console.log(`👋 ${message.data.user} a rejoint`);
+                        addChatMessage(
+                            "Système",
+                            `${message.data.user} a rejoint la room`,
+                        );
+                        break;
+
+                    case "leave":
+                        console.log(`👋 ${message.data.user} est parti`);
+                        addChatMessage(
+                            "Système",
+                            `${message.data.user} a quitté la room`,
+                        );
+                        break;
+
+                    case "chat":
+                        addChatMessage(message.data.user, message.data.message);
+                        break;
+
+                    case "mute":
+                    case "unmute":
+                    case "video_on":
+                    case "video_off":
+                        console.log(`🔄 ${message.data.user}: ${message.type}`);
+                        break;
+
+                    case "error":
+                        alert("Erreur: " + message.data);
+                        break;
+
+                    default:
+                        console.log("❓ Message non géré:", message);
+                }
+            }
+
+            // Mettre à jour la liste des participants
+            function updateParticipantsList(participants) {
+                console.log("👥 Participants:", participants);
+
+                // Supprimer les vidéos des participants qui ont quitté
+                const remoteVideos = document.querySelectorAll(
+                    ".remote-video-container",
+                );
+                remoteVideos.forEach((container) => container.remove());
+
+                // Ajouter les vidéos des participants actuels
+                participants.forEach((participant) => {
+                    if (participant.userID !== currentUser.id) {
+                        addRemoteVideoContainer(participant);
+                    }
+                });
+            }
+
+            // Ajouter un conteneur vidéo pour un participant distant
+            function addRemoteVideoContainer(participant) {
+                const container = document.createElement("div");
+                container.className =
+                    "video-container bg-gray-800 rounded-lg overflow-hidden relative remote-video-container";
+                container.innerHTML = `
+                <video id="remote-video-${participant.userID}" autoplay playsinline class="w-full h-full object-cover"></video>
+                <div class="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded text-sm">
+                    ${participant.username} ${participant.role === "admin" ? "👑" : ""}
+                </div>
+                <div class="absolute top-2 right-2 flex space-x-1">
+                    ${participant.audioMuted ? '<div class="bg-red-500 p-1 rounded text-xs">🎤❌</div>' : ""}
+                    ${participant.videoOff ? '<div class="bg-red-500 p-1 rounded text-xs">📹❌</div>' : ""}
+                    ${participant.screenSharing ? '<div class="bg-green-500 p-1 rounded text-xs">🖥️</div>' : ""}
+                </div>
+                ${participant.videoOff ? '<div class="absolute inset-0 bg-gray-700 flex items-center justify-center"><div class="text-6xl">👤</div></div>' : ""}
+            `;
+                elements.videoGrid.appendChild(container);
+            }
+
+            // Contrôles audio/vidéo
+            elements.toggleAudio.addEventListener("click", () => {
+                if (localStream) {
+                    const audioTrack = localStream.getAudioTracks()[0];
+                    if (audioTrack) {
+                        audioTrack.enabled = !audioTrack.enabled;
+                        isAudioOn = audioTrack.enabled;
+                        elements.toggleAudio.innerHTML = isAudioOn
+                            ? "🎤"
+                            : "🎤❌";
+                        elements.toggleAudio.className = isAudioOn
+                            ? "p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors"
+                            : "p-3 bg-red-600 hover:bg-red-700 rounded-full transition-colors";
+
+                        if (websocket) {
+                            websocket.send(
+                                JSON.stringify({
+                                    type: isAudioOn ? "unmute" : "mute",
+                                }),
+                            );
+                        }
+                    }
+                }
+            });
+
+            elements.toggleVideo.addEventListener("click", () => {
+                if (localStream) {
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        videoTrack.enabled = !videoTrack.enabled;
+                        isVideoOn = videoTrack.enabled;
+                        elements.toggleVideo.innerHTML = isVideoOn
+                            ? "🎥"
+                            : "🎥❌";
+                        elements.toggleVideo.className = isVideoOn
+                            ? "p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors"
+                            : "p-3 bg-red-600 hover:bg-red-700 rounded-full transition-colors";
+
+                        elements.localVideoOff.classList.toggle(
+                            "hidden",
+                            isVideoOn,
+                        );
+
+                        if (websocket) {
+                            websocket.send(
+                                JSON.stringify({
+                                    type: isVideoOn ? "video_on" : "video_off",
+                                }),
+                            );
+                        }
+                    }
+                }
+            });
+
+            elements.shareScreen.addEventListener("click", async () => {
+                try {
+                    if (!isScreenSharing) {
+                        const screenStream =
+                            await navigator.mediaDevices.getDisplayMedia({
+                                video: true,
+                                audio: true,
+                            });
+                        elements.localVideo.srcObject = screenStream;
+                        isScreenSharing = true;
+                        elements.shareScreen.innerHTML = "🖥️❌";
+
+                        if (websocket) {
+                            websocket.send(
+                                JSON.stringify({ type: "screen_share_start" }),
+                            );
+                        }
+
+                        screenStream.getVideoTracks()[0].onended = () => {
+                            stopScreenShare();
+                        };
+                    } else {
+                        stopScreenShare();
+                    }
+                } catch (error) {
+                    console.error("❌ Erreur partage d'écran:", error);
+                }
+            });
+
+            function stopScreenShare() {
+                if (localStream) {
+                    elements.localVideo.srcObject = localStream;
+                    isScreenSharing = false;
+                    elements.shareScreen.innerHTML = "🖥️";
+
+                    if (websocket) {
+                        websocket.send(
+                            JSON.stringify({ type: "screen_share_stop" }),
+                        );
+                    }
+                }
+            }
+
+            elements.leaveCall.addEventListener("click", () => {
+                if (websocket) {
+                    websocket.close();
+                }
+                cleanup();
+            });
+
+            // Chat
+            document
+                .getElementById("openChatBtn")
+                .addEventListener("click", () => {
+                    document
+                        .getElementById("chatPanel")
+                        .classList.remove("translate-x-full");
+                    document
+                        .getElementById("chatPanel")
+                        .classList.remove("hidden");
+                });
+
+            document
+                .getElementById("closeChatBtn")
+                .addEventListener("click", () => {
+                    document
+                        .getElementById("chatPanel")
+                        .classList.add("translate-x-full");
+                });
+
+            document
+                .getElementById("sendMessageBtn")
+                .addEventListener("click", sendChatMessage);
+            document
+                .getElementById("messageInput")
+                .addEventListener("keypress", (e) => {
+                    if (e.key === "Enter") sendChatMessage();
+                });
+
+            function sendChatMessage() {
+                const input = document.getElementById("messageInput");
+                const message = input.value.trim();
+
+                if (message && websocket) {
+                    websocket.send(
+                        JSON.stringify({
+                            type: "chat",
+                            data: { message: message },
+                        }),
+                    );
+                    input.value = "";
+                }
+            }
+
+            function addChatMessage(user, message) {
+                const chatMessages = document.getElementById("chatMessages");
+                const messageDiv = document.createElement("div");
+                messageDiv.className = "bg-gray-700 p-2 rounded";
+                messageDiv.innerHTML = `
+                <div class="text-xs text-gray-400 mb-1">
+                    ${user} - ${new Date().toLocaleTimeString()}
+                </div>
+                <div>${message}</div>
+            `;
+                chatMessages.appendChild(messageDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            // Nettoyage
+            function cleanup() {
+                if (localStream) {
+                    localStream.getTracks().forEach((track) => track.stop());
+                    localStream = null;
+                }
+
+                Object.values(peerConnections).forEach((pc) => pc.close());
+                peerConnections = {};
+                remoteStreams = {};
+
+                elements.connectionForm.classList.remove("hidden");
+                elements.videoCall.classList.add("hidden");
+                document.getElementById("openChatBtn").classList.add("hidden");
+                document
+                    .getElementById("chatPanel")
+                    .classList.add("translate-x-full");
+
+                // Reset des contrôles
+                isVideoOn = true;
+                isAudioOn = true;
+                isScreenSharing = false;
+                elements.toggleAudio.innerHTML = "🎤";
+                elements.toggleVideo.innerHTML = "🎥";
+                elements.shareScreen.innerHTML = "🖥️";
+            }
+
+            // Vérification de compatibilité
+            if (!navigator.mediaDevices || !window.WebSocket) {
+                alert(
+                    "❌ Votre navigateur ne supporte pas WebRTC ou WebSocket",
+                );
+            } else {
+                console.log("✅ Navigateur compatible WebRTC");
+            }
+        </script>
+    </body>
+</html>

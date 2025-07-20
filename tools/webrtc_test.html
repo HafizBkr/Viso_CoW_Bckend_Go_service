@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>WebRTC Signaling Test</title>
+        <style>
+            video {
+                width: 300px;
+                margin: 10px;
+                background: #222;
+            }
+            #log {
+                white-space: pre;
+                background: #eee;
+                padding: 10px;
+                height: 200px;
+                overflow: auto;
+            }
+            button {
+                margin: 5px;
+            }
+        </style>
+    </head>
+    <body>
+        <h2>WebRTC Signaling Test</h2>
+        <div>
+            Room ID: <input id="room" value="YOUR_ROOM_ID" size="40" /> Token:
+            <input id="token" value="YOUR_JWT_TOKEN" size="60" />
+            <button id="join">Join Room</button>
+        </div>
+        <div>
+            <video id="local" autoplay muted playsinline></video>
+            <video id="remote" autoplay playsinline></video>
+        </div>
+        <div>
+            <button id="toggleVideo">Activer/Désactiver Caméra</button>
+            <button id="toggleAudio">Activer/Désactiver Micro</button>
+        </div>
+        <div id="log"></div>
+        <script>
+            let ws, pc;
+            let localStream;
+            let videoEnabled = true;
+            let audioEnabled = true;
+            let makingOffer = false;
+            let polite = false; // Pour éviter les collisions d'offre
+            let ignoreOffer = false;
+            const log = (msg) => {
+                document.getElementById("log").textContent += msg + "\n";
+            };
+
+            document.getElementById("join").onclick = async () => {
+                const room = document.getElementById("room").value;
+                const token = document.getElementById("token").value;
+                // --- MODIFICATION ICI ---
+                const wsUrl = `wss://visoconf-service-go.onrender.com/ws/room/${room}?token=${token}`;
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => log("WebSocket connected");
+                ws.onclose = () => log("WebSocket closed");
+                ws.onerror = (e) => log("WebSocket error: " + e);
+
+                ws.onmessage = async (event) => {
+                    const msg = JSON.parse(event.data);
+                    log("WS <- " + event.data);
+
+                    if (msg.type === "existing_peers") {
+                        // Si on voit qu'il y a déjà quelqu'un, on est "polite"
+                        polite = msg.data.length > 0;
+                        log("Polite mode: " + polite);
+                    }
+
+                    if (msg.type === "offer" || msg.type === "answer") {
+                        await ensurePeerConnection();
+                        const desc = new RTCSessionDescription(msg.data);
+
+                        const readyForOffer =
+                            !makingOffer &&
+                            (pc.signalingState === "stable" || ignoreOffer);
+
+                        ignoreOffer =
+                            !polite && msg.type === "offer" && !readyForOffer;
+                        if (ignoreOffer) {
+                            log("Ignoring offer (collision)");
+                            return;
+                        }
+
+                        try {
+                            await pc.setRemoteDescription(desc);
+                            if (msg.type === "offer") {
+                                const answer = await pc.createAnswer();
+                                await pc.setLocalDescription(answer);
+                                ws.send(
+                                    JSON.stringify({
+                                        type: "answer",
+                                        data: pc.localDescription,
+                                    }),
+                                );
+                                log("Sent answer");
+                            }
+                        } catch (e) {
+                            log("SDP error: " + e);
+                        }
+                    }
+
+                    if (msg.type === "candidate") {
+                        await ensurePeerConnection();
+                        try {
+                            await pc.addIceCandidate(
+                                new RTCIceCandidate(msg.data),
+                            );
+                        } catch (e) {
+                            log("Error adding ICE: " + e);
+                        }
+                    }
+                };
+
+                // Get user media and show local video
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true,
+                });
+                document.getElementById("local").srcObject = localStream;
+                log("Got local media");
+
+                setupToggleButtons();
+
+                await ensurePeerConnection();
+
+                // Démarre la négociation si on est le premier (pas de pairs existants)
+                ws.addEventListener("message", async function onPeers(event) {
+                    const msg = JSON.parse(event.data);
+                    if (
+                        msg.type === "existing_peers" &&
+                        msg.data.length === 0
+                    ) {
+                        // Premier dans la room, crée une offre
+                        makingOffer = true;
+                        try {
+                            const offer = await pc.createOffer();
+                            await pc.setLocalDescription(offer);
+                            ws.send(
+                                JSON.stringify({
+                                    type: "offer",
+                                    data: pc.localDescription,
+                                }),
+                            );
+                            log("Sent offer");
+                        } catch (e) {
+                            log("Offer error: " + e);
+                        } finally {
+                            makingOffer = false;
+                        }
+                        ws.removeEventListener("message", onPeers);
+                    }
+                });
+            };
+
+            async function ensurePeerConnection() {
+                if (pc) return;
+                pc = new RTCPeerConnection();
+                localStream
+                    .getTracks()
+                    .forEach((track) => pc.addTrack(track, localStream));
+                pc.onicecandidate = (e) => {
+                    if (e.candidate) {
+                        ws.send(
+                            JSON.stringify({
+                                type: "candidate",
+                                data: e.candidate,
+                            }),
+                        );
+                    }
+                };
+                pc.ontrack = (e) => {
+                    document.getElementById("remote").srcObject = e.streams[0];
+                    log("Received remote stream");
+                };
+                pc.onnegotiationneeded = async () => {
+                    if (makingOffer) return;
+                    makingOffer = true;
+                    try {
+                        const offer = await pc.createOffer();
+                        await pc.setLocalDescription(offer);
+                        ws.send(
+                            JSON.stringify({
+                                type: "offer",
+                                data: pc.localDescription,
+                            }),
+                        );
+                        log("Sent offer (negotiationneeded)");
+                    } catch (e) {
+                        log("Negotiation error: " + e);
+                    } finally {
+                        makingOffer = false;
+                    }
+                };
+                log("PeerConnection created");
+            }
+
+            function setupToggleButtons() {
+                document.getElementById("toggleVideo").onclick = function () {
+                    if (!localStream) return;
+                    videoEnabled = !videoEnabled;
+                    localStream.getVideoTracks().forEach((track) => {
+                        track.enabled = videoEnabled;
+                    });
+                    log("Caméra " + (videoEnabled ? "activée" : "coupée"));
+                };
+
+                document.getElementById("toggleAudio").onclick = function () {
+                    if (!localStream) return;
+                    audioEnabled = !audioEnabled;
+                    localStream.getAudioTracks().forEach((track) => {
+                        track.enabled = audioEnabled;
+                    });
+                    log("Micro " + (audioEnabled ? "activé" : "coupé"));
+                };
+            }
+        </script>
+    </body>
+</html>

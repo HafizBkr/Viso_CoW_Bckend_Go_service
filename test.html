@@ -1,0 +1,360 @@
+<!doctype html>
+<html>
+    <head>
+        <title>WebRTC Test Client</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            #video-container {
+                display: flex;
+                margin: 20px 0;
+            }
+            video {
+                width: 300px;
+                height: 225px;
+                margin-right: 20px;
+                background: #000;
+            }
+            #messages {
+                height: 200px;
+                overflow-y: scroll;
+                border: 1px solid #ccc;
+                padding: 10px;
+                margin: 10px 0;
+            }
+            .controls {
+                margin: 10px 0;
+            }
+            button {
+                margin-right: 10px;
+                padding: 5px 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>WebRTC Test Client</h1>
+
+        <div>
+            <label for="roomId">Room ID:</label>
+            <input type="text" id="roomId" value="test-room" />
+            <label for="userId">User ID:</label>
+            <input type="text" id="userId" value="user1" />
+            <label for="username">Username:</label>
+            <input type="text" id="username" value="User 1" />
+            <button id="connectBtn">Connect</button>
+        </div>
+
+        <div class="controls">
+            <button id="muteBtn" disabled>Mute</button>
+            <button id="unmuteBtn" disabled>Unmute</button>
+            <button id="videoOnBtn" disabled>Video On</button>
+            <button id="videoOffBtn" disabled>Video Off</button>
+        </div>
+
+        <div id="video-container">
+            <video id="localVideo" autoplay muted></video>
+            <video id="remoteVideo" autoplay></video>
+        </div>
+
+        <div>
+            <input
+                type="text"
+                id="messageInput"
+                placeholder="Type a message..."
+            />
+            <button id="sendBtn" disabled>Send</button>
+        </div>
+
+        <div id="messages"></div>
+
+        <script>
+            const config = {
+                iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+            };
+
+            let ws;
+            let peerConnection;
+            let localStream;
+            let roomId;
+            let userId;
+
+            // DOM elements
+            const connectBtn = document.getElementById("connectBtn");
+            const muteBtn = document.getElementById("muteBtn");
+            const unmuteBtn = document.getElementById("unmuteBtn");
+            const videoOnBtn = document.getElementById("videoOnBtn");
+            const videoOffBtn = document.getElementById("videoOffBtn");
+            const sendBtn = document.getElementById("sendBtn");
+            const messageInput = document.getElementById("messageInput");
+            const messagesDiv = document.getElementById("messages");
+            const localVideo = document.getElementById("localVideo");
+            const remoteVideo = document.getElementById("remoteVideo");
+
+            // Event listeners
+            connectBtn.addEventListener("click", toggleConnect);
+            muteBtn.addEventListener("click", () =>
+                sendMessage({ type: "mute" }),
+            );
+            unmuteBtn.addEventListener("click", () =>
+                sendMessage({ type: "unmute" }),
+            );
+            videoOnBtn.addEventListener("click", () =>
+                sendMessage({ type: "video_on" }),
+            );
+            videoOffBtn.addEventListener("click", () =>
+                sendMessage({ type: "video_off" }),
+            );
+            sendBtn.addEventListener("click", sendChatMessage);
+            messageInput.addEventListener("keypress", (e) => {
+                if (e.key === "Enter") sendChatMessage();
+            });
+
+            async function toggleConnect() {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    disconnect();
+                    connectBtn.textContent = "Connect";
+                } else {
+                    await connect();
+                    connectBtn.textContent = "Disconnect";
+                }
+            }
+
+            async function connect() {
+                roomId = document.getElementById("roomId").value;
+                userId = document.getElementById("userId").value;
+                const username = document.getElementById("username").value;
+
+                // For testing, we'll use a simple token
+                const token = `test-token-${userId}`;
+
+                try {
+                    // Get user media
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: { width: 320, height: 240 },
+                    });
+                    localVideo.srcObject = localStream;
+
+                    // Connect to WebSocket
+                    const wsUrl = `ws://localhost:8081/ws/room/${roomId}?token=${token}`;
+                    ws = new WebSocket(wsUrl);
+
+                    ws.onopen = () => {
+                        logMessage("Connected to room");
+                        enableControls(true);
+                    };
+
+                    ws.onclose = () => {
+                        logMessage("Disconnected from room");
+                        enableControls(false);
+                    };
+
+                    ws.onmessage = async (event) => {
+                        const message = JSON.parse(event.data);
+                        logMessage(`Received: ${message.type}`);
+
+                        switch (message.type) {
+                            case "existing_peers":
+                                message.data.forEach((peer) => {
+                                    logMessage(
+                                        `Existing peer: ${peer.username}`,
+                                    );
+                                });
+                                break;
+
+                            case "peer_joined":
+                                logMessage(
+                                    `${message.data.username} joined the room`,
+                                );
+                                if (userId !== message.from) {
+                                    await createPeerConnection();
+                                    await createOffer();
+                                }
+                                break;
+
+                            case "peer_left":
+                                logMessage(
+                                    `Peer ${message.from} left the room`,
+                                );
+                                if (peerConnection) {
+                                    peerConnection.close();
+                                    peerConnection = null;
+                                }
+                                break;
+
+                            case "offer":
+                                if (userId !== message.from) {
+                                    await createPeerConnection();
+                                    await handleOffer(message.data);
+                                }
+                                break;
+
+                            case "answer":
+                                if (userId !== message.from) {
+                                    await handleAnswer(message.data);
+                                }
+                                break;
+
+                            case "candidate":
+                                if (userId !== message.from) {
+                                    await handleCandidate(message.data);
+                                }
+                                break;
+
+                            case "mute":
+                                logMessage(`${message.data.username} muted`);
+                                break;
+
+                            case "unmute":
+                                logMessage(`${message.data.username} unmuted`);
+                                break;
+                        }
+                    };
+                } catch (err) {
+                    logMessage(`Error: ${err.message}`);
+                    console.error(err);
+                }
+            }
+
+            function disconnect() {
+                if (ws) ws.close();
+                if (peerConnection) peerConnection.close();
+                if (localStream) {
+                    localStream.getTracks().forEach((track) => track.stop());
+                }
+                localVideo.srcObject = null;
+                remoteVideo.srcObject = null;
+            }
+
+            async function createPeerConnection() {
+                if (peerConnection) return;
+
+                peerConnection = new RTCPeerConnection(config);
+
+                // Add local stream
+                localStream.getTracks().forEach((track) => {
+                    peerConnection.addTrack(track, localStream);
+                });
+
+                // ICE candidate handler
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        sendMessage({
+                            type: "candidate",
+                            data: event.candidate,
+                            target: getOtherUserId(),
+                        });
+                    }
+                };
+
+                // Remote stream handler
+                peerConnection.ontrack = (event) => {
+                    remoteVideo.srcObject = event.streams[0];
+                };
+
+                peerConnection.oniceconnectionstatechange = () => {
+                    logMessage(
+                        `ICE state: ${peerConnection.iceConnectionState}`,
+                    );
+                };
+            }
+
+            async function createOffer() {
+                try {
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer);
+
+                    sendMessage({
+                        type: "offer",
+                        data: offer,
+                        target: getOtherUserId(),
+                    });
+                } catch (err) {
+                    console.error("Error creating offer:", err);
+                }
+            }
+
+            async function handleOffer(offer) {
+                try {
+                    await peerConnection.setRemoteDescription(
+                        new RTCSessionDescription(offer),
+                    );
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+
+                    sendMessage({
+                        type: "answer",
+                        data: answer,
+                        target: getOtherUserId(),
+                    });
+                } catch (err) {
+                    console.error("Error handling offer:", err);
+                }
+            }
+
+            async function handleAnswer(answer) {
+                try {
+                    await peerConnection.setRemoteDescription(
+                        new RTCSessionDescription(answer),
+                    );
+                } catch (err) {
+                    console.error("Error handling answer:", err);
+                }
+            }
+
+            async function handleCandidate(candidate) {
+                try {
+                    await peerConnection.addIceCandidate(
+                        new RTCIceCandidate(candidate),
+                    );
+                } catch (err) {
+                    console.error("Error handling ICE candidate:", err);
+                }
+            }
+
+            function getOtherUserId() {
+                // In a real app, you'd track all participants
+                return userId === "user1" ? "user2" : "user1";
+            }
+
+            function sendMessage(message) {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify(message));
+                    logMessage(`Sent: ${message.type}`);
+                }
+            }
+
+            function sendChatMessage() {
+                const text = messageInput.value.trim();
+                if (text && ws && ws.readyState === WebSocket.OPEN) {
+                    const message = {
+                        type: "chat",
+                        data: { message: text },
+                    };
+                    ws.send(JSON.stringify(message));
+                    logMessage(`You: ${text}`);
+                    messageInput.value = "";
+                }
+            }
+
+            function logMessage(text) {
+                const messageElement = document.createElement("div");
+                messageElement.textContent = text;
+                messagesDiv.appendChild(messageElement);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+
+            function enableControls(enabled) {
+                muteBtn.disabled = !enabled;
+                unmuteBtn.disabled = !enabled;
+                videoOnBtn.disabled = !enabled;
+                videoOffBtn.disabled = !enabled;
+                sendBtn.disabled = !enabled;
+            }
+        </script>
+    </body>
+</html>
